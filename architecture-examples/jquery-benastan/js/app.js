@@ -1,106 +1,154 @@
 (function( window ) {
 	'use strict';
 
-  var $filter, $list, $template, filter, status, NavHelper;
-
-  NavHelper = {'': 0, 'active': 1, 'completed': 2}
-  $list = $('#todo-list');
-  $template = $('#todo-template').children(0);
-
-  function updateTodo(element, updateBlock) {
-    var $todo, index;
-    $todo = $(element).parents('li');
-    if (filter !== '') {
-      index = $filter.children().index($todo);
-      $todo = $list.children()[filter === 'active' ? 'not' : 'filter']('.completed').eq(index);
+  function TodoItem(element) {
+    if (! element) {
+      this.$todo = list.$template.clone();
+    } else if (list.$list.children().has(element)) {
+      this.$todo = $(element);
+    } else {
+      this.element = element;
+      this.$todo = $(element).parents('li');
+      if (list.filter !== '') {
+        this.index = list.$filter.children().index(this.$todo);
+        this.$todo = list.$list.children()[list.filter === 'active' ? 'not' : 'filter']('.completed').eq(this.index);
+      }
     }
-    updateBlock($todo, element);
-    $(document).triggerHandler('save');
+  }
+  
+  TodoItem.prototype.toggleEditing = function(editing) {
+    $(this.element).parents('li').toggleClass('editing', editing);
+    if (editing) $(this.element).parents('li').find('.edit').focus().select();
+  };
+
+  TodoItem.prototype.updateText = function(text) {
+    this.$todo.find('label').html(text);
+    this.$todo.find('.edit').attr('value', text)
+    this.save();
+  };
+
+  TodoItem.prototype.setCompleted = function(completed) {
+    this.$todo.toggleClass('completed', completed).find('.toggle')[completed ? 'attr' : 'removeAttr']('checked', 'checked');
+    this.save();
+  };
+
+  TodoItem.prototype.destroy = function() {
+    this.$todo.remove();
+    list.save();
+  };
+
+  TodoItem.prototype.save = function() {
+    if (this.element) $(this.element).parents('li').toggleClass('editing', false);
+    else this.$todo.prependTo(list.$list);
+    list.save();
+  };
+
+  function TodoList() {
+    this.filter = window.location.href.split('#/')[1];
+    this.linkIndex = {'': 0, 'active': 1, 'completed': 2}[this.filter];
+    this.total = this.$list.children().length;
+    this.complete = this.$list.find('.completed').length;
+    this.remaining = this.$list.children().not('.completed').length;
   }
 
-  $(document).on('load', function() {
-    $list.show().html(localStorage.getItem('just-jquery-todomvc'));
-    if ($filter) $filter.remove();
-    filter = window.location.href.split('#/')[1];
-    status = {
-      total: $list.children().length,
-      complete: $list.find('.completed').length,
-      remaining: $list.children().not('.completed').length
-    };
-    $('#main, #footer')[status.total === 0 ? 'hide' : 'show']();
-    $('#toggle-all')[status.total > 0 && status.remaining == 0 ? 'prop' : 'removeAttr']('checked', 'checked');
-    if (status.total === 0) return;
+  TodoList.prototype.$list = $('#todo-list');
+  TodoList.prototype.$template = $('#todo-template').children(0);
+  
+  TodoList.prototype.save = function(transaction) {
+    if (this.transaction) return;
+    if (! transaction) {
+      $(document).triggerHandler('save') && return;
+    }
+    this.transaction = transaction;
+    this.transaction();
+    this.transaction = undefined;
+    $(document).triggerHandler('save');
+  };
+
+  TodoList.prototype.toggleAllCompleted = function(completed) {
+    this.save(function() {
+      this.$list.children().each(function() {
+        new TodoItem(this).setCompleted(completed);
+      });
+    });
+  };
+
+  TodoList.prototype.clearCompleted = function() {
+    this.$list.find('.completed').remove();
+    this.save();
+  };
+
+  TodoList.prototype.reload = function() {
+    $(document).triggerHandler('reload');
+  };
+
+  var list;
+
+  function on() { $.fn.on.apply($(document), arguments); }
+
+  on('reload', function() {
+    if (list && list.$filter) list.$filter.remove();
+    TodoList.prototype.$list.show().html(localStorage.getItem('just-jquery-todomvc'));
+    list = new TodoList();
+    $('#main, #footer')[list.total === 0 ? 'hide' : 'show']();
+    $('#toggle-all')[list.total > 0 && list.remaining == 0 ? 'prop' : 'removeAttr']('checked', 'checked');
+    if (list.total === 0) return;
     $('#filters li a').each(function(index) {
-      $(this).toggleClass('selected', index === NavHelper[filter]);
+      $(this).toggleClass('selected', index === list.linkIndex);
     });
-    $('#todo-count').find('strong').text(status.remaining)
-    $('#clear-completed').html(status.complete == 0 ? '' : 'Clear completed (' + status.complete + ')');
+    $('#todo-count').find('strong').text(list.remaining)
+    $('#clear-completed').html(list.complete == 0 ? '' : 'Clear completed (' + list.complete + ')');
   });
 
-  $(document).on('save', function() {
-    localStorage.setItem('just-jquery-todomvc', $list.html());
-    $(document).triggerHandler('load');
+  on('save', function() {
+    localStorage.setItem('just-jquery-todomvc', list.$list.html());
+    list.reload();
   });
 
-  $(document).on('load', function() {
-    if (filter === '') return true;
-    $filter = $list.clone();
-    $filter.toggleClass('todo-filter-list');
-    $filter.children()[filter === 'active' ? 'filter' : 'not']('.completed').remove();
-    $list.hide().after($filter);
+  on('reload', function() {
+    if (list.filter === '') return true;
+    list.$filter = list.$list.clone();
+    list.$filter.toggleClass('todo-filter-list');
+    list.$filter.children()[list.filter === 'active' ? 'filter' : 'not']('.completed').remove();
+    list.$list.hide().after(list.$filter);
   });
 
-  $(document).on('change', '#toggle-all', function() {
-    var completeAll;
-    completeAll = $(this).filter(':checked').length > 0
-    $list.children().toggleClass('completed', completeAll).find('.toggle')[completeAll ? 'attr' : 'removeAttr']('checked', 'checked');
-    $(document).triggerHandler('save');
+  on('change', '#toggle-all', function() {
+    list.toggleAllCompleted($(this).filter(':checked').length > 0)
   });
 
-  $(document).on('submit', '#create-todo', function() {
-    $template.clone()
-      .find('label').html(this.newTodo.value).end()
-      .find('.edit').attr('value', this.newTodo.value).end()
-      .prependTo($list);
+  on('submit', '#create-todo', function() {
+    new TodoItem().updateText(this.newTodo.value);
     this.reset();
-    $(document).triggerHandler('save');
-    return false;
   });
 
-  $(document).on('change', '.toggle', function(e) {
-    updateTodo(this, function($todo, element) {
-      $todo.toggleClass('completed').find('.toggle')[$(element).filter(':checked').length ? 'attr' : 'removeAttr']('checked', 'checked')
-    });
+  on('change', '.toggle', function() {
+    new TodoItem(this).setCompleted($(this).filter(':checked').length > 0);
   });
 
-  $(document).on('dblclick', '.view label', function() {
-    $(this).parents('li').toggleClass('editing', true).find('.edit').focus().select();
+  on('dblclick', '.view label', function() {
+    new TodoItem(this).toggleEditing(true);
   });
 
-  $(document).on('blur', '.edit', function() {
-    $(this).parents('li').toggleClass('editing', false);
+  on('blur', '.edit', function() {
+    new TodoItem(this).toggleEditing(false);
   });
 
-  $(document).on('submit', '.edit-todo', function(e) {
-    updateTodo(this, function($todo, element) {
-      $todo.find('label').html(e.target.editTodo.value);
-      $(element).parents('li').toggleClass('editing', false);
-    });
-    return false;
+  on('submit', '.edit-todo', function() {
+    new TodoItem(this).updateText(this.editTodo.value);
   });
 
-  $(document).on('click', '.destroy', function() {
-    updateTodo(this, function($todo) { $todo.remove(); });
+  on('click', '.destroy', function() {
+    new TodoItem(this).destroy();
   });
 
-  $(document).on('click', '#filters a', function() {
-    setTimeout(function() { $(document).triggerHandler('load'); }, 0);
+  on('click', '#filters a', function() {
+    setTimeout(function() { list.reload(); }, 0);
   });
 
-  $(document).on('click', '#clear-completed', function() {
-    $list.find('.completed').remove();
-    $(document).triggerHandler('save');
+  on('click', '#clear-completed', function() {
+    list.clearCompleted();
   });
 
-  $(document).triggerHandler('load');  
+  TodoList.prototype.reload();
 })( window );
